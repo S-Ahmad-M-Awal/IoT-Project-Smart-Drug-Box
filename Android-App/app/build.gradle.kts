@@ -40,7 +40,16 @@ android {
 }
 
 dependencies {
-
+    implementation(libs.androidx.core.ktx.v1120)
+    implementation(libs.androidx.activity.compose.v182)
+    implementation(libs.material3)
+    implementation(libs.ui.tooling.preview)
+    implementation(libs.ui)
+    implementation(libs.androidx.material3.v132)
+    implementation(libs.androidx.activity.compose.v190)
+    implementation(libs.paho.org.eclipse.paho.client.mqttv3)
+    implementation(libs.paho.org.eclipse.paho.client.mqttv3)
+    implementation(libs.org.eclipse.paho.android.service)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
