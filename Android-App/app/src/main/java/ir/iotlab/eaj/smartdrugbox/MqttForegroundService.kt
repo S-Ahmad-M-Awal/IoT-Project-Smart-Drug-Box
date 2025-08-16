@@ -18,7 +18,6 @@ class MqttForegroundService : Service() {
     private val clientId = "AndroidClient-${System.currentTimeMillis()}"
     private val username = "AJ_IoT"
     private val passwordss = "hgsde32993004"
-    private val topics = arrayOf("esp32/startup", "esp32/led/status")
 
     companion object {
         private const val NOTIFICATION_ID = 123
@@ -30,6 +29,48 @@ class MqttForegroundService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.let {
+            when (it.getStringExtra("command")) {
+                "led" -> {
+                    val pin = it.getIntExtra("pin", -1)
+                    val state = it.getBooleanExtra("state", false)
+                    if (pin != -1) {
+                        val message = "{\"pin\":$pin,\"state\":${if (state) "ON" else "OFF"}}"
+                        publishMessage("esp32/led/command", message)
+                    }
+                }
+                "period" -> {
+                    val pin = it.getIntExtra("pin", -1)
+                    val period = it.getIntExtra("period", 60)
+                    if (pin != -1) {
+                        val message = "{\"pin\":$pin,\"period\":$period}"
+                        publishMessage("esp32/period", message)
+                    }
+                }
+                "reset" -> {
+                    val pin = it.getIntExtra("pin", -1)
+                    if (pin != -1) {
+                        publishMessage("esp32/reset", pin.toString())
+                    }
+                }
+            }
+        }
+        return START_STICKY
+    }
+
+    private fun publishMessage(topic: String, payload: String) {
+        try {
+            if (::mqttClient.isInitialized && mqttClient.isConnected) {
+                val mqttMessage = MqttMessage(payload.toByteArray())
+                mqttClient.publish(topic, mqttMessage)
+                Log.d("MQTT", "Published to $topic: $payload")
+            }
+        } catch (e: Exception) {
+            Log.e("MQTT", "Publish error", e)
         }
     }
 
@@ -55,9 +96,9 @@ class MqttForegroundService : Service() {
 
     private fun getForegroundNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MQTT Service Running")
-            .setContentText("Maintaining connection to ESP32")
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Using system icon
+            .setContentTitle("Pill Reminder Service")
+            .setContentText("Monitoring pill schedules")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -69,74 +110,34 @@ class MqttForegroundService : Service() {
                 userName = username
                 password = passwordss.toCharArray()
                 isCleanSession = false
-                // Automatic reconnect is handled by the callback now
                 connectionTimeout = 10
                 keepAliveInterval = 60
             }
 
             mqttClient.setCallback(object : MqttCallbackExtended {
-                private var shouldReconnect = true
-
                 override fun connectComplete(reconnect: Boolean, serverURI: String) {
-                    Log.d("MQTT_SERVICE", "Connected to $serverURI")
-                    subscribeToTopics()
+                    Log.d("MQTT", "Connected to $serverURI")
                 }
 
                 override fun connectionLost(cause: Throwable?) {
-                    Log.e("MQTT_SERVICE", "Connection lost: ${cause?.message}")
-                    if (shouldReconnect) {
-                        Thread {
-                            try {
-                                Thread.sleep(5000) // Wait 5 seconds before reconnecting
-                                mqttClient.connect(options)
-                            } catch (e: Exception) {
-                                Log.e("MQTT_SERVICE", "Reconnect failed", e)
-                            }
-                        }.start()
-                    }
+                    Log.e("MQTT", "Connection lost: ${cause?.message}")
                 }
 
                 override fun messageArrived(topic: String, message: MqttMessage) {
-                    Log.d("MQTT_SERVICE", "Message arrived on $topic: ${String(message.payload)}")
-                    if (topic == "esp32/startup") {
-                        showNotification("ESP32 Alert", String(message.payload))
-                    }
+                    Log.d("MQTT", "Message arrived: ${String(message.payload)}")
                 }
 
                 override fun deliveryComplete(token: IMqttDeliveryToken?) {
-                    Log.d("MQTT_SERVICE", "Message delivered")
+                    Log.d("MQTT", "Message delivered")
                 }
             })
 
             mqttClient.connect(options)
             startForeground(NOTIFICATION_ID, getForegroundNotification())
         } catch (e: Exception) {
-            Log.e("MQTT_SERVICE", "Error starting MQTT client", e)
+            Log.e("MQTT", "Error starting MQTT client", e)
+            stopSelf()
         }
-    }
-
-    private fun subscribeToTopics() {
-        try {
-            topics.forEach { topic ->
-                mqttClient.subscribe(topic, 1)
-                Log.d("MQTT_SERVICE", "Subscribed to $topic")
-            }
-        } catch (e: Exception) {
-            Log.e("MQTT_SERVICE", "Subscription error", e)
-        }
-    }
-
-    private fun showNotification(title: String, message: String) {
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Using system icon
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -146,10 +147,9 @@ class MqttForegroundService : Service() {
         try {
             if (::mqttClient.isInitialized && mqttClient.isConnected) {
                 mqttClient.disconnect()
-                Log.d("MQTT_SERVICE", "Disconnected from broker")
             }
         } catch (e: Exception) {
-            Log.e("MQTT_SERVICE", "Disconnection error", e)
+            Log.e("MQTT", "Disconnection error", e)
         }
     }
 }
